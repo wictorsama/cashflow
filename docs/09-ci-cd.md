@@ -84,7 +84,7 @@ Com o repositório público, o code scanning abriu **42 alertas**. Nenhum é uma
 Estes itens não ficam no código; são ajustes no *Settings* do repositório:
 
 1. **Branch protection em `main`:** exigir pull request e os checks `Backend`, `Web`, `Helm chart`, `Image (*)`, `CodeQL (*)` e `Secret scan` verdes antes de aceitar.
-2. **Code security:** ativar *Dependency graph*, *Dependabot alerts* e *Code scanning* (gratuitos em repositório público).
+2. **Code security:** ativar *Dependency graph*, *Dependabot alerts* e *Code scanning* (gratuitos em repositório público). Sem o *Dependency graph*, a revisão de dependências do pull request não tem de onde ler: o job confere isso antes, **avisa e pula a revisão** (em vez de falhar por "Forbidden") e volta a bloquear vulnerabilidades altas assim que o recurso é ligado.
 3. **Packages:** depois da primeira release, tornar as imagens públicas no GHCR se quiser que outros as baixem sem login.
 
 ## Como fazer uma release
