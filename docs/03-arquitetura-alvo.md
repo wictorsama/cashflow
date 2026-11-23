@@ -155,7 +155,7 @@ Evento em JSON, com versão de esquema. Mudanças compatíveis acrescentam campo
 | RNF-07 Correção | Idempotência atômica, reconciliação, reprocessamento. |
 | RNF-08 Segurança | Ver seção 8. |
 | RNF-09 Observabilidade | Ver seção 9. |
-| RNF-10 Escalabilidade | Serviços sem estado, HPA, consumidores concorrentes na mesma fila. |
+| RNF-10 Escalabilidade | Serviços sem estado, consumidores concorrentes na mesma fila e HPA (existe no chart, desligado localmente). |
 | RNF-12/13 Portabilidade e redundância | Helm, kind, ≥ 2 réplicas. Ver seção 10. |
 
 ### Modos de falha
@@ -195,7 +195,7 @@ Detalhes em [ADR-0006](adr/0006-keycloak-oidc.md) e [ADR-0007](adr/0007-yarp-gat
 Visão de implantação em [architecture/c4.md](architecture/c4.md#implantação-deployment).
 
 - **Dois modos, mesmas imagens:** Compose para desenvolvimento; Kubernetes local (kind, 4 nós) com **Helm** para o ambiente redundante.
-- **Camada 1 (entrega do desafio):** serviços .NET e Gateway com ≥ 2 réplicas, *anti-affinity*, *probes*, *PodDisruptionBudget*, HPA e *rolling update*; dependências em instância única.
+- **Camada 1 (entrega do desafio):** serviços .NET e Gateway com ≥ 2 réplicas, *anti-affinity*, *probes*, *PodDisruptionBudget* e *rolling update* (o HPA existe no chart, desligado localmente); dependências em instância única.
 - **Camada 2 (entregue, [14](14-alta-disponibilidade.md)):** PostgreSQL com primário e réplica síncrona e failover automático (CloudNativePG, operador replicado), RabbitMQ em 3 nós com *quorum queues*. Redis segue único (é só *cache*) e o Keycloak também.
 - **Nuvem:** os mesmos charts, com `values` próprios; dependências substituídas por serviços gerenciados (banco multi-AZ, broker e cache gerenciados). Infraestrutura como código (Terraform) descrita como evolução.
 - **Automação:** um único script (`up.ps1`/`up.sh`) cria o cluster, constrói as imagens, instala dependências e charts e espera o ambiente ficar pronto.

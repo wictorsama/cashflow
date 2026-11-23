@@ -28,7 +28,7 @@ flowchart TB
   subgraph plataforma["Plataforma"]
     K["Keycloak<br/>(OIDC)"]
     OBS["OpenTelemetry<br/>Prometheus · Grafana · Jaeger"]
-    K8S["Kubernetes + Helm<br/>NetworkPolicy · HPA · PDB"]
+    K8S["Kubernetes + Helm<br/>NetworkPolicy · PDB"]
     CI["GitHub Actions<br/>build · testes · segurança · release"]
   end
   LLM["Provedor de IA<br/>(opcional)"]
