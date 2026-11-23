@@ -24,7 +24,7 @@ Quem vai avaliar deve usar o **Google Cloud**, então o código de infraestrutur
 | **Dependências trocáveis por serviços gerenciados** | `external.postgres`, `external.rabbitmq`, `external.redis` ([values](../deploy/helm/cashflow/values.yaml)); renderizado no CI com [values-cloud-example.yaml](../deploy/helm/cashflow/values-cloud-example.yaml) |
 | **Entrada pública por Ingress com TLS** | `ingress.*` no chart; hosts, classe e segredo de TLS por `values` |
 | **Identidade padrão OIDC/JWT** | Os serviços só pedem emissor, audiência e escopos; trocar o Keycloak por outro provedor OIDC não muda código (ver abaixo) |
-| **Operação em produção**: réplicas, anti-afinidade, probes, PodDisruptionBudget, HPA, atualização sem indisponibilidade, política de rede | Verificado no cluster local, incluindo perda de pod e de nó |
+| **Operação em produção**: réplicas, anti-afinidade, probes, PodDisruptionBudget, atualização sem indisponibilidade, política de rede (o HPA existe no chart, desligado localmente) | Verificado no cluster local, incluindo perda de pod e de nó |
 | **Configuração por variáveis de ambiente**, segredos fora da imagem | Chart; nenhuma credencial no repositório |
 
 ## O que NÃO está pronto (dito sem rodeios)

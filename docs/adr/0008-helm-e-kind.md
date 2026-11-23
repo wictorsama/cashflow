@@ -13,7 +13,7 @@ O projeto deve subir em contêineres e Kubernetes de forma automática, com redu
 - **Helm** como empacotamento: um chart por serviço, com `values-local.yaml` e `values-cloud.yaml`. Dependências instaladas por charts oficiais ou operadores.
 - **Compose** mantido para o ciclo de desenvolvimento (uma instância de cada).
 - **Script único** (`up.ps1`/`up.sh`) que cria o cluster, constrói e carrega as imagens, instala dependências e charts e aguarda a prontidão.
-- **Entrega em camadas:** camada 1 com serviços e Gateway redundantes (≥ 2 réplicas, *anti-affinity*, *probes*, *PodDisruptionBudget*, HPA, *rolling update*) e dependências em instância única; camada 2 (entregue, ver [14](../14-alta-disponibilidade.md)) com PostgreSQL (CloudNativePG) e RabbitMQ (3 nós, *quorum queues*) replicados; Redis fica único por ser só cache.
+- **Entrega em camadas:** camada 1 com serviços e Gateway redundantes (≥ 2 réplicas, *anti-affinity*, *probes*, *PodDisruptionBudget*, *rolling update*; HPA no chart, desligado localmente) e dependências em instância única; camada 2 (entregue, ver [14](../14-alta-disponibilidade.md)) com PostgreSQL (CloudNativePG) e RabbitMQ (3 nós, *quorum queues*) replicados; Redis fica único por ser só cache.
 
 ## Alternativas consideradas
 

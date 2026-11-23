@@ -78,7 +78,7 @@ Com o volume de referência ([02](02-requisitos.md), P2): 1.000 comerciantes × 
 
 | Se aumentar... | O que cresce | Observação |
 |---|---|---|
-| **Leituras de saldo** | Nós (Gateway, Consolidação) e, pouco, Redis | O *cache* serviu 93% das leituras no teste; o banco quase não sente. Escala por mais réplicas (HPA). |
+| **Leituras de saldo** | Nós (Gateway, Consolidação) e, pouco, Redis | O *cache* serviu 93% das leituras no teste; o banco quase não sente. Escala por mais réplicas (à mão, ou pelo HPA do chart, desligado localmente). |
 | **Lançamentos** | Banco de Lançamentos e armazenamento; fila | O gargalo previsível é o PostgreSQL de escrita; sobe de classe (`db.t4g.large`) antes de exigir novos nós. |
 | **Número de comerciantes** | Armazenamento e saldo no banco | Crescimento linear e lento. |
 | **Retenção de logs e traces** | Disco e, se for serviço gerenciado, ingestão | Trocar por amostragem de traces e retenção de 15 dias. |
