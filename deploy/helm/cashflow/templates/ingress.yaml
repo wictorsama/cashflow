@@ -1,0 +1,39 @@
+{{- if .Values.ingress.enabled }}
+# One Ingress for the three public entry points. In the cloud this is the only door in: the services behind the gateway
+# stay unreachable from outside (and the network policies keep it that way inside).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cashflow
+  {{- with .Values.ingress.annotations }}
+  annotations: {{ toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tlsSecretName }}
+  tls:
+    - secretName: {{ .Values.ingress.tlsSecretName }}
+      hosts:
+        {{- range $name, $host := .Values.ingress.hosts }}
+        {{- if $host }}
+        - {{ $host }}
+        {{- end }}
+        {{- end }}
+  {{- end }}
+  rules:
+    {{- range $name, $host := .Values.ingress.hosts }}
+    {{- if $host }}
+    - host: {{ $host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ if eq $name "api" }}gateway{{ else if eq $name "web" }}web{{ else }}keycloak{{ end }}
+                port: { name: http }
+    {{- end }}
+    {{- end }}
+{{- end }}

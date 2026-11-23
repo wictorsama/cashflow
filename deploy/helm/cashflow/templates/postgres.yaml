@@ -1,0 +1,5 @@
+{{- if not .Values.external.postgres.enabled }}
+{{ include "cashflow.postgres" (dict "root" . "db" "entries") }}
+---
+{{ include "cashflow.postgres" (dict "root" . "db" "consolidation") }}
+{{- end }}

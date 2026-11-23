@@ -1,0 +1,16 @@
+# Local cluster: 1 control-plane + 3 workers, so replicas can be spread and a node loss can be demonstrated.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: cashflow
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - { containerPort: 30080, hostPort: 8080, protocol: TCP }   # Gateway (single public entry point)
+      - { containerPort: 30085, hostPort: 3000, protocol: TCP }   # Web application
+      - { containerPort: 30082, hostPort: 8082, protocol: TCP }   # Keycloak (token issuer)
+      - { containerPort: 30083, hostPort: 3030, protocol: TCP }   # Grafana
+      - { containerPort: 30084, hostPort: 16686, protocol: TCP }  # Jaeger UI
+  # Three workers: a RabbitMQ cluster needs three nodes to lose one and keep its majority.
+  - role: worker
+  - role: worker
+  - role: worker

@@ -1,0 +1,7 @@
+# Findings that are a conscious decision, not an oversight. Anything not listed here is still reported.
+
+# DS-0026 "No HEALTHCHECK defined" (low): the images run in Kubernetes, which ignores the Docker HEALTHCHECK and uses the
+# startup, readiness and liveness probes of the chart instead (/health, /health/ready, /health/live). A second mechanism
+# would only duplicate the first.
+AVD-DS-0026
+DS026

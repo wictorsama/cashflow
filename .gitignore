@@ -1,0 +1,47 @@
+# Challenge statement (company material, not published)
+Arq. Solu*.pdf
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+TestResults/
+*.log
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+coverage/
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.pfx
+*.key
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+results/
+
+# Crash dumps
+*.stackdump
+
+# Terraform: never commit state, local variable files, or the generated secret Helm values
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+values-*-generated.yaml
+
+# The delivery zip
+dist/
+
+# Personal study material (not part of the delivery)
+estudo/

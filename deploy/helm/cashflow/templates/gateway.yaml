@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  labels: {{ include "cashflow.labels" (dict "name" "gateway") | nindent 4 }}
+spec:
+  {{- if not .Values.gateway.hpa.enabled }}
+  replicas: {{ .Values.gateway.replicas }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: gateway }
+  template:
+    metadata:
+      labels: {{ include "cashflow.labels" (dict "name" "gateway") | nindent 8 }}
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: gateway }
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: gateway
+          image: {{ include "cashflow.image" (dict "root" . "name" "gateway") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{ name: http, containerPort: 8080 }]
+          # Keep serving for a few seconds after the pod leaves the Service: the endpoint removal takes a moment to
+          # reach every proxy, and requests sent in that window would otherwise hit a pod that already stopped.
+          lifecycle:
+            preStop:
+              exec: { command: ["sleep", "5"] }
+          env:
+            - { name: Auth__MetadataAddress, value: {{ .Values.auth.metadataAddress | quote }} }
+            - { name: Auth__Issuer, value: {{ .Values.auth.issuer | quote }} }
+            - { name: Auth__Audience, value: {{ .Values.auth.audience | quote }} }
+            - { name: Auth__RequireHttpsMetadata, value: {{ .Values.auth.requireHttpsMetadata | quote }} }
+            {{- if .Values.observability.enabled }}
+            - { name: Otel__TracesEndpoint, value: "http://jaeger:4317" }
+            - { name: Otel__MetricsEndpoint, value: "http://prometheus:9090/api/v1/otlp/v1/metrics" }
+            {{- end }}
+            - { name: RateLimit__PermitPerSecond, value: {{ .Values.gateway.permitPerSecond | quote }} }
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources: {{ toYaml .Values.gateway.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+spec:
+  {{- if .Values.gateway.nodePort }}
+  type: NodePort
+  {{- end }}
+  selector: { app.kubernetes.io/name: gateway }
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      {{- if .Values.gateway.nodePort }}
+      nodePort: {{ .Values.gateway.nodePort }}
+      {{- end }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: gateway }
+{{- if .Values.gateway.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: gateway }
+  minReplicas: {{ .Values.gateway.hpa.minReplicas }}
+  maxReplicas: {{ .Values.gateway.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.gateway.hpa.cpuTarget }} }
+{{- end }}

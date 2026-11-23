@@ -1,0 +1,72 @@
+groups:
+  - name: cashflow-slo
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_server_request_duration_seconds_count{job="cashflow-gateway",http_response_status_code=~"5.."}[5m]))
+            / sum(rate(http_server_request_duration_seconds_count{job="cashflow-gateway"}[5m])) > 0.05
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "More than 5% of gateway responses are 5xx"
+      - alert: SlowRequests
+        expr: |
+          histogram_quantile(0.95, sum by (le, job) (rate(http_server_request_duration_seconds_bucket{job=~"cashflow-(entries|consolidation)"}[5m]))) > 0.5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 latency of {{ $labels.job }} is above 500 ms (RNF-03)"
+      - alert: StaleConsolidation
+        expr: histogram_quantile(0.95, sum by (le) (rate(cashflow_event_freshness_seconds_bucket[5m]))) > 15
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Balances take more than 15 s to reflect an entry (RNF-04)"
+      - alert: QueueBacklog
+        expr: max(cashflow_queue_depth) > 1000
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "The consolidation queue has a backlog; the consumer is slow or down"
+      - alert: DeadLetterMessages
+        expr: max(cashflow_dlq_depth) > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "There are messages in the dead-letter queue"
+      - alert: ReconciliationDivergence
+        expr: max(cashflow_reconciliation_divergences) > 0
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "A balance disagrees with what was registered (RNF-07); see the reconciliation report"
+      - alert: ReconciliationStopped
+        expr: time() - max(cashflow_reconciliation_last_run_unixtime) > 1800
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "The reconciliation has not completed for more than 30 minutes"
+      - alert: AuditChainBroken
+        expr: max(cashflow_audit_chain_issues) > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "The books no longer match the tamper-evident audit chain: someone changed data outside the service"
+      - alert: AuditVerificationStopped
+        expr: time() - max(cashflow_audit_last_verification_unixtime) > 1800
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "The audit chain has not been verified for more than 30 minutes"
+      - alert: AssistantUnavailable
+        expr: sum(rate(cashflow_assistant_requests_total{result="unavailable"}[5m])) / clamp_min(sum(rate(cashflow_assistant_requests_total[5m])), 0.001) > 0.2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "The AI provider is failing for more than 20% of the draft requests; the ordinary form still works (RNF-14)"
+      - alert: OutboxStuck
+        expr: max(cashflow_outbox_pending) > 100
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Entries are waiting to be published; the broker may be down"

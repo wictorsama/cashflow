@@ -1,0 +1,147 @@
+{{- if not .Values.external.rabbitmq.enabled }}
+{{- $ns := .Release.Namespace -}}
+{{- $replicas := int .Values.rabbitmq.replicas -}}
+# A RabbitMQ cluster. Queues are quorum queues (Raft): every message is on a majority of the nodes before the
+# publisher is confirmed, so the loss of one node loses nothing and publishing continues.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-config
+data:
+  rabbitmq.conf: |
+    cluster_formation.peer_discovery_backend = classic_config
+    {{- range $i := until $replicas }}
+    cluster_formation.classic_config.nodes.{{ add $i 1 }} = rabbit@rabbitmq-{{ $i }}.rabbitmq-nodes.{{ $ns }}.svc.cluster.local
+    {{- end }}
+    default_queue_type = quorum
+    # A partition resolves in favour of the majority; the minority stops instead of diverging.
+    cluster_partition_handling = pause_minority
+    queue_leader_locator = balanced
+---
+# Headless: stable DNS names for the nodes (they must find each other before they are ready).
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-nodes
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector: { app.kubernetes.io/name: rabbitmq }
+  ports:
+    - { name: amqp, port: 5672 }
+    - { name: epmd, port: 4369 }
+    - { name: dist, port: 25672 }
+---
+# What the applications use: only nodes that are ready receive connections.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+spec:
+  selector: { app.kubernetes.io/name: rabbitmq }
+  ports:
+    - { name: amqp, port: 5672 }
+    - { name: management, port: 15672 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  labels: {{ include "cashflow.labels" (dict "name" "rabbitmq") | nindent 4 }}
+spec:
+  serviceName: rabbitmq-nodes
+  replicas: {{ $replicas }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels: { app.kubernetes.io/name: rabbitmq }
+  template:
+    metadata:
+      labels: {{ include "cashflow.labels" (dict "name" "rabbitmq") | nindent 8 }}
+    spec:
+      terminationGracePeriodSeconds: 120
+      # One node per Kubernetes node: losing a machine takes down one member, never the majority.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels: { app.kubernetes.io/name: rabbitmq }
+      containers:
+        - name: rabbitmq
+          image: {{ .Values.rabbitmq.image }}
+          ports: [{ containerPort: 5672 }, { containerPort: 15672 }, { containerPort: 4369 }, { containerPort: 25672 }]
+          env:
+            - name: MY_POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - { name: RABBITMQ_USE_LONGNAME, value: "true" }
+            - { name: RABBITMQ_NODENAME, value: "rabbit@$(MY_POD_NAME).rabbitmq-nodes.{{ $ns }}.svc.cluster.local" }
+            - { name: RABBITMQ_DEFAULT_USER, value: {{ .Values.rabbitmq.user | quote }} }
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom: { secretKeyRef: { name: cashflow-secrets, key: rabbitmq-password } }
+            - name: RABBITMQ_ERLANG_COOKIE
+              valueFrom: { secretKeyRef: { name: cashflow-secrets, key: rabbitmq-erlang-cookie } }
+          readinessProbe:
+            exec: { command: ["rabbitmq-diagnostics", "-q", "check_running"] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 10
+          resources: {{ toYaml .Values.rabbitmq.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/rabbitmq }
+            - { name: config, mountPath: /etc/rabbitmq/conf.d/10-cashflow.conf, subPath: rabbitmq.conf }
+      volumes:
+        - name: config
+          configMap: { name: rabbitmq-config }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: 1Gi } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rabbitmq
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: rabbitmq }
+---
+# A quorum queue is created with replicas on the nodes that exist at that moment, and the services may declare it
+# before the whole cluster has formed. After every install or upgrade this job spreads the queues over every node.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rabbitmq-spread-queues
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: spread
+          image: {{ .Values.rabbitmq.image }}
+          env:
+            - name: RABBITMQ_ERLANG_COOKIE
+              valueFrom: { secretKeyRef: { name: cashflow-secrets, key: rabbitmq-erlang-cookie } }
+            - { name: RABBITMQ_USE_LONGNAME, value: "true" }
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              # The command-line tools read the cookie from this file, not from the environment variable.
+              printf '%s' "$RABBITMQ_ERLANG_COOKIE" > /var/lib/rabbitmq/.erlang.cookie
+              chmod 600 /var/lib/rabbitmq/.erlang.cookie
+              first="rabbit@rabbitmq-0.rabbitmq-nodes.{{ $ns }}.svc.cluster.local"
+              until [ "$(rabbitmqctl -n "$first" -q cluster_status --formatter json | grep -o 'rabbit@' | wc -l)" -ge {{ $replicas }} ]; do
+                echo "waiting for {{ $replicas }} nodes"; sleep 3
+              done
+              for i in $(seq 0 {{ sub $replicas 1 }}); do
+                rabbitmq-queues -n "$first" grow "rabbit@rabbitmq-$i.rabbitmq-nodes.{{ $ns }}.svc.cluster.local" all || true
+              done
+              rabbitmq-queues -n "$first" quorum_status consolidation.entries || true
+{{- end }}

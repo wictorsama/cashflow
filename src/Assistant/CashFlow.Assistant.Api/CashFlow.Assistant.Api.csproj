@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.15" />
+    <ProjectReference Include="..\CashFlow.Assistant.Core\CashFlow.Assistant.Core.csproj" />
+    <ProjectReference Include="../../Shared/CashFlow.Observability/CashFlow.Observability.csproj" />
+    <ProjectReference Include="../../Shared/CashFlow.Security/CashFlow.Security.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

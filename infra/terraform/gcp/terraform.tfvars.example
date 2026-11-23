@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (which is not committed) and fill in.
+project_id = "your-gcp-project-id"
+
+# Production-like (the defaults): regional high availability, deletion protection on.
+# A cheaper throwaway pilot:
+# sql_high_availability = "ZONAL"
+# redis_tier            = "BASIC"
+# deletion_protection   = false

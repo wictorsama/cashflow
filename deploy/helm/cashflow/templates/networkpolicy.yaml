@@ -1,0 +1,125 @@
+{{- if .Values.networkPolicy.enabled }}
+# Network isolation (ingress). Everything in the namespace is closed by default; each rule below opens exactly one
+# path the system needs. A pod that is not part of the system (or a compromised one that should not talk to a database)
+# cannot reach the services behind the gateway, the databases, the broker or the cache.
+#
+# Egress is left open on purpose: the services call Keycloak, the broker and the databases by name, and restricting
+# egress as well is a further hardening step (see docs/10-modelo-de-ameacas.md).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# Public entry points: reachable from outside the cluster (NodePort or a load balancer).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-public-entry-points
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/name, operator: In, values: [gateway, web, keycloak, grafana, jaeger] }
+  policyTypes: [Ingress]
+  ingress:
+    - {}
+---
+# Entries and Consolidation are reached only through the gateway; Consolidation also reads Entries' totals
+# (reconciliation job), and Prometheus is not involved (metrics are pushed, not scraped).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: entries-from-gateway-and-reconciler
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: entries } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: gateway } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: consolidation } }
+---
+# The assistant is reached only through the gateway. It calls out to its provider (egress is open) but nothing in the
+# cluster calls it except the gateway, and it holds no credentials for any other service.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: assistant-from-gateway
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: assistant } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: gateway } }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: consolidation-from-gateway
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: consolidation } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: gateway } }
+{{- range $db, $service := dict "entries" "entries" "consolidation" "consolidation" }}
+---
+# Each database accepts connections only from its own service, from its own replicas (streaming replication) and from
+# the PostgreSQL operator (health checks and failover).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-{{ $db }}-from-its-service
+spec:
+  podSelector: { matchLabels: { cnpg.io/cluster: postgres-{{ $db }} } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: {{ $service }} } }
+        - podSelector: { matchLabels: { cnpg.io/cluster: postgres-{{ $db }} } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: cnpg-system } }
+{{- end }}
+---
+# The broker accepts the two services, its own nodes (cluster traffic) and the job that spreads the queues.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq-from-services-and-peers
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: rabbitmq } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: entries } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: consolidation } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: rabbitmq } }
+        - podSelector: { matchLabels: { job-name: rabbitmq-spread-queues } }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-from-consolidation
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: redis } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: consolidation } }
+{{- if .Values.observability.enabled }}
+---
+# Metrics are pushed to Prometheus by the services; Grafana reads from it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-from-services-and-grafana
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: prometheus } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/name, operator: In, values: [gateway, entries, consolidation, assistant, grafana] }
+{{- end }}
+{{- end }}

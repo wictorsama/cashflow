@@ -1,0 +1,27 @@
+# Local kind environment only. These credentials are throwaway and never used outside the laptop.
+# Only the gateway and Keycloak (token issuer) are published on the host; the services stay inside the cluster.
+gateway:
+  nodePort: 30080
+keycloak:
+  nodePort: 30082
+  adminPassword: local-dev-only
+  merchantIntegrationSecret: local-dev-merchant-secret
+  opsAdminSecret: local-dev-ops-secret
+  reconcilerSecret: local-dev-reconciler-secret
+  auditorSecret: local-dev-auditor-secret
+  auditor1Password: local-dev-only
+  merchant1Password: local-dev-only
+postgres:
+  password: local-dev-only
+rabbitmq:
+  password: local-dev-only
+  erlangCookie: local-dev-only-erlang-cookie
+observability:
+  grafana:
+    nodePort: 30083
+    adminPassword: local-dev-only
+  jaeger:
+    nodePort: 30084
+web:
+  nodePort: 30085
+  authSecret: local-dev-only-session-secret-change-me-0123456789

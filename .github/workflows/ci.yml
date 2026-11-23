@@ -1,0 +1,222 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call: # the release workflow runs the whole CI before publishing anything
+
+# Least privilege: the workflow can only read the repository. Jobs that need more ask for it themselves.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  backend:
+    name: Backend (build, tests, coverage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      # Warnings are errors (Directory.Build.props), so style and analyzer problems fail the build here.
+      - name: Build
+        run: dotnet build CashFlow.slnx --configuration Release
+
+      # The integration tests start real PostgreSQL, RabbitMQ and Redis containers (Testcontainers).
+      - name: Test
+        run: >
+          dotnet test CashFlow.slnx --configuration Release --no-build
+          --collect:"XPlat Code Coverage" --results-directory ./coverage
+          --logger "trx;LogFileName=results.trx"
+
+      - name: Coverage report
+        if: always()
+        run: |
+          dotnet tool install --global dotnet-reportgenerator-globaltool
+          reportgenerator \
+            -reports:"coverage/**/coverage.cobertura.xml" \
+            -targetdir:coverage/report \
+            -reporttypes:"MarkdownSummaryGithub;JsonSummary" \
+            -assemblyfilters:"+CashFlow.Entries.Domain;+CashFlow.Entries.Application;+CashFlow.Consolidation.Application;+CashFlow.Assistant.Core"
+          cat coverage/report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+
+      # RNF-11: at least 80% line coverage in the domain and application layers.
+      - name: Coverage gate (80% in domain and application)
+        run: |
+          jq -r '.coverage.assemblies[] | "\(.name) \(.coverage)"' coverage/report/Summary.json
+          jq -e '[.coverage.assemblies[].coverage] | min >= 80' coverage/report/Summary.json
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: backend-test-results
+          path: |
+            coverage/report
+            **/TestResults/*.trx
+          if-no-files-found: ignore
+
+  web:
+    name: Web (lint, types, tests, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # Known high or critical vulnerabilities in what ships to production fail the build.
+      - run: npm audit --omit=dev --audit-level=high
+
+  chart:
+    name: Helm chart (lint and schema validation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Lint
+        run: helm lint deploy/helm/cashflow -f deploy/helm/cashflow/values-local.yaml
+      # Renders the chart and checks every object against the Kubernetes schemas, with and without observability.
+      - name: Validate rendered manifests
+        run: |
+          render() {
+            helm template cashflow deploy/helm/cashflow -f deploy/helm/cashflow/values-local.yaml "$@" |
+              docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 -strict -summary -ignore-missing-schemas -
+          }
+          render
+          render --set observability.enabled=false
+          # The cloud mode: managed database, broker and cache, and an Ingress with TLS.
+          render -f deploy/helm/cashflow/values-cloud-example.yaml
+          render --set postgres.instances=1 --set rabbitmq.replicas=1
+
+  terraform:
+    name: Terraform (format and validate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No cloud account is touched: formatting and validation need no credentials and no state.
+      - name: Format and validate
+        run: |
+          tf() { docker run --rm -v "$PWD/infra/terraform/gcp:/work" -w /work hashicorp/terraform:1.17.2 "$@"; }
+          tf fmt -check -recursive
+          tf init -backend=false -input=false
+          tf validate
+
+  images:
+    name: Image (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      security-events: write # uploads the vulnerability report to code scanning (public repositories)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { service: entries, dockerfile: deploy/docker/entries.Dockerfile, context: . }
+          - { service: consolidation, dockerfile: deploy/docker/consolidation.Dockerfile, context: . }
+          - { service: assistant, dockerfile: deploy/docker/assistant.Dockerfile, context: . }
+          - { service: gateway, dockerfile: deploy/docker/gateway.Dockerfile, context: . }
+          - { service: web, dockerfile: deploy/docker/web.Dockerfile, context: web }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          load: true
+          push: false
+          tags: cashflow/${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      # Critical vulnerabilities with an available fix fail the build; the rest is reported in code scanning.
+      - name: Scan for critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: cashflow/${{ matrix.service }}:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Report all vulnerabilities
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: cashflow/${{ matrix.service }}:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+          exit-code: "0"
+      # Public repository: findings go to the Security tab. Private one: code scanning needs GitHub Advanced Security, so the
+      # same report is kept as an artifact instead (the upload answered "Resource not accessible by integration").
+      - name: Upload report to code scanning
+        if: always() && github.event_name != 'pull_request' && !github.event.repository.private
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+          category: trivy-${{ matrix.service }}
+      - name: Keep the report as an artifact
+        if: always() && github.event.repository.private
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trivy-${{ matrix.service }}-sarif
+          path: trivy-${{ matrix.service }}.sarif
+          if-no-files-found: ignore
+
+  e2e:
+    name: End to end (kind cluster)
+    # Heavier than the other jobs: runs on main and on demand, not on every pull request.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [backend, web, chart]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The same script a developer runs: creates the cluster, builds the images and installs the chart. The runner has
+      # little memory, so the databases and the broker run without replicas here (the replicated setup is tested locally).
+      - name: Bring the system up
+        shell: pwsh
+        run: ./scripts/up.ps1 -NoObservability -Lightweight
+      - name: Smoke test
+        shell: pwsh
+        run: ./scripts/smoke-test.ps1
+      - name: Cluster state
+        if: always()
+        run: |
+          kubectl get pods -n cashflow -o wide
+          kubectl get events -n cashflow --sort-by=.lastTimestamp | tail -40
+      - name: Logs of failing pods
+        if: failure()
+        run: |
+          for pod in $(kubectl get pods -n cashflow -o name); do
+            echo "::group::$pod"
+            kubectl logs -n cashflow "$pod" --all-containers --tail=80 || true
+            echo "::endgroup::"
+          done

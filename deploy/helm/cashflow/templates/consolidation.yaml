@@ -1,0 +1,1 @@
+{{ include "cashflow.service" (dict "root" . "name" "consolidation" "db" "consolidation" "values" .Values.consolidation "redis" true "reconciliation" true) }}

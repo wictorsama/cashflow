@@ -1,0 +1,48 @@
+# Google Cloud (GKE). The fixed choices for this cloud; what changes per installation comes from two other places:
+#   - values-gcp-generated.yaml : written by Terraform into Secret Manager (database and cache addresses, every password).
+#     Get it with the command printed by `terraform output helm_values_command`. NEVER commit it.
+#   - the three lines marked CHANGE ME below, and --set image.tag=<version> at install.
+# See infra/terraform/gcp/README.md for the whole procedure.
+
+image:
+  # Images published by the release workflow (tag vX.Y.Z). To use the private Artifact Registry instead, set this to the
+  # `artifact_registry` output of Terraform and push the images there.
+  registry: ghcr.io/wictorsama/cashflow/
+  pullPolicy: IfNotPresent
+
+# Cloud SQL and Memorystore are managed (enabled, with their addresses, in the generated file). GCP has no managed
+# RabbitMQ, so the broker keeps running in the cluster as three nodes with quorum queues, exactly as in the local setup.
+external:
+  postgres:
+    sslMode: Require
+  rabbitmq:
+    enabled: false
+
+rabbitmq:
+  replicas: 3
+
+networkPolicy:
+  enabled: true
+
+# The public door: an NGINX Ingress controller (see the README) with a certificate. CHANGE ME: your domain.
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  tlsSecretName: cashflow-tls
+  hosts:
+    api: api.example.com
+    web: app.example.com
+    auth: auth.example.com
+
+# CHANGE ME: the same hosts, with https. The token issuer must match exactly what Keycloak puts in the token.
+auth:
+  issuer: https://auth.example.com/realms/cashflow
+  requireHttpsMetadata: false # the services reach Keycloak inside the cluster over http; the public address is https
+
+keycloak:
+  publicUrl: https://auth.example.com
+
+web:
+  publicUrl: https://app.example.com

@@ -1,0 +1,166 @@
+# Defaults are cloud-neutral. values-local.yaml overrides them for kind.
+image:
+  registry: "cashflow/"  # images loaded into kind locally; a published release uses e.g. ghcr.io/wictorsama/cashflow/
+  tag: dev
+  pullPolicy: IfNotPresent
+
+entries:
+  replicas: 2
+  nodePort: null
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 384Mi }
+  hpa: { enabled: false, minReplicas: 2, maxReplicas: 6, cpuTarget: 70 }
+
+consolidation:
+  replicas: 2
+  nodePort: null
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 384Mi }
+  hpa: { enabled: false, minReplicas: 2, maxReplicas: 6, cpuTarget: 70 }
+
+# Layer 2: PostgreSQL (CloudNativePG operator, installed first by scripts/up.ps1) and RabbitMQ run replicated.
+# Redis stays a single instance on purpose: it is only a cache and the services keep working without it.
+postgres:
+  image: ghcr.io/cloudnative-pg/postgresql:17
+  instances: 2          # one primary + one synchronous replica per database, on different nodes
+  storage: 1Gi
+  # password: required, with no default: set it via values-local.yaml or --set (never commit real values)
+  resources:
+    requests: { cpu: 100m, memory: 192Mi }
+rabbitmq:
+  image: rabbitmq:4-management-alpine
+  user: cashflow
+  # password: required, with no default (see postgres.password)
+  erlangCookie: ""      # shared secret the nodes use to trust each other; required
+  replicas: 3           # a majority (2 of 3) survives the loss of any one node
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+redis:
+  image: redis:7-alpine
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+
+# Managed services instead of the ones this chart runs in the cluster (RDS / Cloud SQL / Azure Database, a hosted
+# RabbitMQ, ElastiCache / Memorystore / Azure Cache). When enabled, the in-cluster version is not installed.
+# Passwords still come from postgres.password and rabbitmq.password. The database user needs the right to run
+# migrations (Database__MigrateOnStartup), or run them as a separate job in a stricter setup.
+external:
+  postgres:
+    enabled: false
+    sslMode: Require
+    entries: { host: "", port: 5432, database: entries, username: entries }
+    consolidation: { host: "", port: 5432, database: consolidation, username: consolidation }
+  rabbitmq:
+    enabled: false
+    scheme: amqps
+    host: ""
+    port: 5671
+    user: cashflow
+    vhost: ""
+  redis:
+    enabled: false
+    connectionString: ""   # for example "host:6380,password=...,ssl=true"
+
+# Public HTTP entry (cloud). Locally the services use NodePorts instead. Hosts must match auth.issuer, keycloak.publicUrl
+# and web.publicUrl. TLS is terminated here (a certificate from cert-manager or the cloud).
+ingress:
+  enabled: false
+  className: ""            # nginx, alb, azure-application-gateway, gce ...
+  annotations: {}
+  tlsSecretName: ""        # empty = no TLS section (let the platform terminate TLS)
+  hosts:
+    api: ""                # the gateway, for example api.example.com
+    web: ""                # the web app
+    auth: ""               # Keycloak (or leave empty when an external identity provider is used)
+
+auth:
+  audience: cashflow-api
+  tokenUrl: http://keycloak/realms/cashflow/protocol/openid-connect/token                # how the reconciliation job gets its token
+  issuer: http://localhost:8082/realms/cashflow                                       # what tokens carry (public address)
+  metadataAddress: http://keycloak/realms/cashflow/.well-known/openid-configuration   # how services reach Keycloak
+  requireHttpsMetadata: false                                                         # true in the cloud (TLS everywhere)
+
+keycloak:
+  image: quay.io/keycloak/keycloak:26.4
+  nodePort: null
+  publicUrl: http://localhost:8082
+  adminPassword: ""
+  merchantIntegrationSecret: ""
+  opsAdminSecret: ""
+  reconcilerSecret: ""
+  auditorSecret: ""
+  auditor1Password: ""
+  merchant1Password: ""
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { memory: 1Gi }
+
+# Reconciliation job of the Consolidation service: compares balances with what Entries registered.
+reconciliation:
+  intervalMinutes: 10
+  windowDays: 3        # accounting days back from today
+  graceSeconds: 120    # events younger than this may still be in the queue, so they are not compared
+
+# Assistant: turns a sentence into an entry DRAFT. It never records anything and has no database; if it is down the
+# ordinary form keeps working. "rules" needs no key; "claude" calls the Claude API (set assistant.claude.apiKey).
+assistant:
+  replicas: 2
+  nodePort: null
+  provider: rules          # rules | claude
+  requestsPerMinute: 20    # per merchant
+  claude:
+    model: claude-haiku-5-5
+    apiKey: ""             # never commit a real key: pass it with --set or from a secret manager
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { memory: 256Mi }
+  hpa: { enabled: false, minReplicas: 2, maxReplicas: 4, cpuTarget: 70 }
+
+# The only public entry point: validates tokens, limits the rate and proxies to the services.
+gateway:
+  replicas: 2
+  nodePort: null
+  permitPerSecond: 200   # per merchant; well above the legitimate peak of 50 req/s
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 384Mi }
+  hpa: { enabled: false, minReplicas: 2, maxReplicas: 6, cpuTarget: 70 }
+
+# Traces (Jaeger), metrics (Prometheus) and dashboards (Grafana). Services push both signals with OTLP.
+observability:
+  enabled: true
+  jaeger:
+    image: jaegertracing/jaeger:2.23.0
+    nodePort: null
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 512Mi }
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 512Mi }
+  grafana:
+    image: grafana/grafana:12.4.15
+    nodePort: null
+    adminPassword: ""
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 384Mi }
+
+# The web application (Next.js). The browser only talks to it; it calls the gateway on the user's behalf.
+web:
+  replicas: 2
+  nodePort: null
+  publicUrl: http://localhost:3000   # where the browser reaches it (also the OAuth redirect base)
+  authSecret: ""                     # signs and encrypts the session cookie
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 384Mi }
+
+# Ingress isolation between the pods of the system (see templates/networkpolicy.yaml). It needs a network plugin that
+# enforces NetworkPolicy; without one the objects are accepted and silently do nothing.
+networkPolicy:
+  enabled: true

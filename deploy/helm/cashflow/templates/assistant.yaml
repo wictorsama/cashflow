@@ -1,0 +1,1 @@
+{{ include "cashflow.service" (dict "root" . "name" "assistant" "values" .Values.assistant "assistant" true) }}

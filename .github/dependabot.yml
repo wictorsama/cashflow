@@ -1,0 +1,40 @@
+version: 2
+
+# Weekly update pull requests. Each one runs the whole CI, so an update only merges when everything still passes.
+#
+# Major versions are left out on purpose for NuGet and npm: a major bump (TypeScript 7, Vitest 5, ESLint 10, coverlet 10...)
+# is a migration with breaking changes, not a routine update, and it should be planned and done by a person, not arrive as
+# a weekly pull request. Minor and patch updates, which carry the security fixes, keep coming.
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      # The Microsoft.* and EF Core packages must move together (they are pinned to the same version on purpose).
+      microsoft:
+        patterns: ["Microsoft.*", "System.*", "Npgsql*"]
+      opentelemetry:
+        patterns: ["OpenTelemetry*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly }
+    groups:
+      next:
+        patterns: ["next", "next-auth", "eslint-config-next"]
+      react:
+        patterns: ["react", "react-dom", "@types/react*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    # The actions are pinned by commit hash; Dependabot proposes the new hash and keeps the version comment.
+    open-pull-requests-limit: 5

@@ -1,0 +1,35 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Consolidation/">
+    <Project Path="src/Consolidation/CashFlow.Consolidation.Api/CashFlow.Consolidation.Api.csproj" />
+    <Project Path="src/Consolidation/CashFlow.Consolidation.Infrastructure/CashFlow.Consolidation.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Entries/">
+    <Project Path="src/Entries/CashFlow.Entries.Api/CashFlow.Entries.Api.csproj" />
+    <Project Path="src/Entries/CashFlow.Entries.Application/CashFlow.Entries.Application.csproj" />
+    <Project Path="src/Entries/CashFlow.Entries.Domain/CashFlow.Entries.Domain.csproj" />
+    <Project Path="src/Entries/CashFlow.Entries.Infrastructure/CashFlow.Entries.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Shared/">
+    <Project Path="src/Shared/CashFlow.Observability/CashFlow.Observability.csproj" />
+    <Project Path="src/Shared/CashFlow.Security/CashFlow.Security.csproj" />
+  </Folder>
+  <Folder Name="/src/Assistant/">
+    <Project Path="src/Assistant/CashFlow.Assistant.Core/CashFlow.Assistant.Core.csproj" />
+    <Project Path="src/Assistant/CashFlow.Assistant.Api/CashFlow.Assistant.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Gateway/">
+    <Project Path="src/Gateway/CashFlow.Gateway/CashFlow.Gateway.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CashFlow.Gateway.Tests/CashFlow.Gateway.Tests.csproj" />
+    <Project Path="tests/CashFlow.Security.Tests/CashFlow.Security.Tests.csproj" />
+    <Project Path="tests/CashFlow.Assistant.Tests/CashFlow.Assistant.Tests.csproj" />
+    <Project Path="src/Consolidation/CashFlow.Consolidation.Application/CashFlow.Consolidation.Application.csproj" />
+    <Project Path="tests/CashFlow.Consolidation.Application.Tests/CashFlow.Consolidation.Application.Tests.csproj" />
+    <Project Path="tests/CashFlow.Consolidation.Integration.Tests/CashFlow.Consolidation.Integration.Tests.csproj" />
+    <Project Path="tests/CashFlow.Entries.Application.Tests/CashFlow.Entries.Application.Tests.csproj" />
+    <Project Path="tests/CashFlow.Entries.Domain.Tests/CashFlow.Entries.Domain.Tests.csproj" />
+    <Project Path="tests/CashFlow.Entries.Integration.Tests/CashFlow.Entries.Integration.Tests.csproj" />
+  </Folder>
+</Solution>

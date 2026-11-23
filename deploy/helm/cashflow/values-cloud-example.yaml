@@ -1,0 +1,16 @@
+# EXAMPLE of the values a cloud install overrides (managed database, managed broker, managed cache, Ingress with TLS).
+# The hosts below are placeholders. Not a working environment: it is rendered in CI to keep the chart honest about the
+# cloud mode, and it has never been applied to a real cloud account (see docs/21-nuvem.md).
+external:
+  postgres:
+    enabled: true
+    entries: { host: entries-db.example.internal }
+    consolidation: { host: cons-db.example.internal }
+  rabbitmq: { enabled: true, host: mq.example.internal, user: cashflow, vhost: cashflow }
+  redis: { enabled: true, connectionString: "cache.example.internal:6380,password=x,ssl=true" }
+ingress:
+  enabled: true
+  className: nginx
+  tlsSecretName: cashflow-tls
+  hosts: { api: api.example.com, web: app.example.com, auth: auth.example.com }
+networkPolicy: { enabled: true }

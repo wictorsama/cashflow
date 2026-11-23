@@ -1,0 +1,9 @@
+# The CloudNativePG operator performs the database failover, so it must survive the same node loss the databases do:
+# two replicas (one leader, one standby, chosen by leader election), never on the same node.
+replicaCount: 2
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - topologyKey: kubernetes.io/hostname
+        labelSelector:
+          matchLabels: { app.kubernetes.io/name: cloudnative-pg }

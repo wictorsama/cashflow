@@ -1,0 +1,16 @@
+title = "Cash Flow secret scan"
+
+# Keep every default rule: the scan still looks for real keys, tokens and private keys everywhere.
+[extend]
+useDefault = true
+
+# The repository ships throwaway credentials on purpose, so that anyone can run the system locally with one command
+# (deploy/helm/cashflow/values-local.yaml, the defaults of scripts/smoke-test.ps1 and the test fixtures). They protect
+# nothing outside a developer's own cluster and are all named "local-dev-...". Anything else that looks like a secret
+# is still reported.
+[allowlist]
+description = "Throwaway credentials of the local environment and test fixtures"
+regexes = [
+  '''local-dev[a-z0-9-]*''',
+  '''key-12345678''',
+]
